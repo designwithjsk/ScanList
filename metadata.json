@@ -1,0 +1,6 @@
+{
+  "name": "ScanList",
+  "description": "Turn any handwritten or printed checklist into digital tasks instantly using AI vision.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
