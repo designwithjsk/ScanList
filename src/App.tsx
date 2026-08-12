@@ -179,6 +179,18 @@ export default function App() {
         }),
       });
 
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        // Non-JSON response (e.g., HTML 404 page when deployed on static SPA host like Vercel)
+        if (engineToUse === "auto") {
+          console.warn("Backend API endpoint returned non-JSON. Switching automatically to local open-source Tesseract OCR...");
+          await runTesseractFallback();
+          return;
+        } else {
+          throw new Error("Cloud API route unavailable. Please use the Open-Source Tesseract OCR engine option.");
+        }
+      }
+
       const data = await response.json();
 
       if (!response.ok || data.error) {
@@ -221,6 +233,11 @@ export default function App() {
           return;
         } catch (tessErr: any) {
           console.error("Fallback Tesseract scan also failed:", tessErr);
+          setScanErrorMessage(
+            tessErr.message || "Couldn't read text from this photo. Please ensure the image is bright and clearly readable."
+          );
+          setScanStatus("error");
+          return;
         }
       }
 
