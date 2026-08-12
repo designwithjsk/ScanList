@@ -3,17 +3,24 @@ import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ScanArea } from "./components/ScanArea";
 import { CameraModal } from "./components/CameraModal";
-import { ImagePreview } from "./components/ImagePreview";
+import { ImagePreview, OcrEngine } from "./components/ImagePreview";
 import { ScanProgress } from "./components/ScanProgress";
 import { ExtractedTaskList } from "./components/ExtractedTaskList";
 import { SavedTaskLists } from "./components/SavedTaskLists";
 import { AddListModal } from "./components/AddListModal";
-import { EmptyState } from "./components/EmptyState";
 import { Toast, ToastState } from "./components/Toast";
 import { Task, TaskList, ActiveView } from "./types";
 import { loadSavedLists, saveSavedLists } from "./utils/storage";
 import { getSampleChecklistImage } from "./utils/sampleImages";
-import { AlertCircle, RefreshCw, Upload, Image as ImageIcon } from "lucide-react";
+import { runTesseractOcr } from "./utils/tesseractOcr";
+import { auth, signInWithGoogle, logoutFirebase } from "./firebase";
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import {
+  subscribeToUserTaskLists,
+  saveUserTaskList,
+  deleteUserTaskList
+} from "./services/firestoreService";
+import { AlertCircle, RefreshCw, Upload, Image as ImageIcon, Cpu } from "lucide-react";
 
 export default function App() {
   // State for user saved task lists
@@ -27,6 +34,8 @@ export default function App() {
   const [scanStatus, setScanStatus] = useState<"idle" | "preview" | "scanning" | "scanned" | "error">("idle");
   const [scannedTasks, setScannedTasks] = useState<Task[]>([]);
   const [scanErrorMessage, setScanErrorMessage] = useState<string>("");
+  const [ocrEngine, setOcrEngine] = useState<OcrEngine>("auto");
+  const [scanProgressMessage, setScanProgressMessage] = useState<string>("");
 
   // Modals & Overlay state
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -73,13 +82,52 @@ export default function App() {
     }
   };
 
-  // Perform AI vision scanning via backend endpoint
-  const handlePerformScan = async () => {
+  // Perform OCR vision scanning (Hybrid Gemini + Open-Source Tesseract.js)
+  const handlePerformScan = async (forcedEngine?: OcrEngine) => {
     if (!selectedImage) return;
 
+    const engineToUse = forcedEngine || ocrEngine;
     setScanStatus("scanning");
     setScanErrorMessage("");
 
+    // Helper to run client-side open source Tesseract OCR
+    const runTesseractFallback = async () => {
+      setScanProgressMessage("Running open-source Tesseract OCR reading...");
+      const result = await runTesseractOcr(selectedImage, (statusMsg) => {
+        setScanProgressMessage(statusMsg);
+      });
+
+      if (!result.tasks || result.tasks.length === 0) {
+        throw new Error(
+          "Open-source OCR couldn't detect clear text lines. Try taking a closer, well-lit photo of your checklist."
+        );
+      }
+
+      const tasks: Task[] = result.tasks.map((t, idx) => ({
+        id: `scanned-tess-${Date.now()}-${idx}`,
+        text: t.text,
+        completed: Boolean(t.completed),
+        createdAt: Date.now(),
+      }));
+
+      setScannedTasks(tasks);
+      setScanStatus("scanned");
+      showToast("Scanned using open-source Tesseract OCR!", "info");
+    };
+
+    if (engineToUse === "tesseract") {
+      try {
+        await runTesseractFallback();
+      } catch (err: any) {
+        console.error("Tesseract scan error:", err);
+        setScanErrorMessage(err.message || "Open-source OCR failed to read the image.");
+        setScanStatus("error");
+      }
+      return;
+    }
+
+    // Try Gemini API first (for "auto" or "gemini")
+    setScanProgressMessage("Analyzing image with cloud vision...");
     try {
       const response = await fetch("/api/scan-checklist", {
         method: "POST",
@@ -92,17 +140,27 @@ export default function App() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || data.error) {
+        // If Gemini API fails and engine is "auto", fallback to Tesseract open-source engine
+        if (engineToUse === "auto") {
+          console.warn("Gemini API error, automatically falling back to open-source Tesseract OCR:", data.error);
+          await runTesseractFallback();
+          return;
+        }
         throw new Error(data.error || "Failed to process checklist image");
       }
 
       if (!data.tasks || data.tasks.length === 0) {
+        if (engineToUse === "auto") {
+          console.warn("Gemini returned no tasks, attempting open-source Tesseract fallback...");
+          await runTesseractFallback();
+          return;
+        }
         setScanErrorMessage("No checklist items were found in this image. Try taking a closer, clearer photo.");
         setScanStatus("error");
         return;
       }
 
-      // Convert scanned raw tasks to Task models with unique IDs
       const tasks: Task[] = data.tasks.map((t: any, idx: number) => ({
         id: `scanned-${Date.now()}-${idx}`,
         text: t.text,
@@ -113,9 +171,20 @@ export default function App() {
       setScannedTasks(tasks);
       setScanStatus("scanned");
     } catch (err: any) {
-      console.error("Scanning error:", err);
+      console.error("Primary scanning error:", err);
+      // Attempt open-source fallback on network/API failure in auto mode
+      if (engineToUse === "auto") {
+        try {
+          console.warn("API call failed, attempting open-source Tesseract OCR fallback...");
+          await runTesseractFallback();
+          return;
+        } catch (tessErr: any) {
+          console.error("Fallback Tesseract scan also failed:", tessErr);
+        }
+      }
+
       setScanErrorMessage(
-        err.message || "Couldn't read the checklist. Try a clearer, brighter photo or upload another image."
+        err.message || "Couldn't read the checklist. Try using the open-source Tesseract engine below or upload another image."
       );
       setScanStatus("error");
     }
@@ -301,47 +370,59 @@ export default function App() {
             <div className="max-w-2xl mx-auto">
               <ImagePreview
                 imageUrl={selectedImage}
-                onScan={handlePerformScan}
+                onScan={() => handlePerformScan()}
                 onReplace={handleScanAgain}
+                ocrEngine={ocrEngine}
+                onEngineChange={setOcrEngine}
               />
             </div>
           )}
 
           {scanStatus === "scanning" && (
             <div className="py-12">
-              <ScanProgress />
+              <ScanProgress engine={ocrEngine} statusText={scanProgressMessage} />
             </div>
           )}
 
           {scanStatus === "error" && (
-            <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center max-w-md mx-auto shadow-xs">
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-md mx-auto shadow-xs">
               <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
                 <AlertCircle className="w-6 h-6" />
               </div>
 
-              <h3 className="text-lg font-bold text-gray-900 mb-1">
+              <h3 className="text-lg font-bold text-slate-900 mb-1">
                 Couldn’t read the checklist
               </h3>
-              <p className="text-sm text-gray-500 mb-6">
+              <p className="text-sm text-slate-500 mb-6">
                 {scanErrorMessage || "Try a clearer, brighter photo or upload another image."}
               </p>
 
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={handlePerformScan}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-xs transition-colors cursor-pointer"
+                  onClick={() => handlePerformScan("tesseract")}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition-colors cursor-pointer"
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Try Again</span>
+                  <Cpu className="w-4 h-4 text-slate-300" />
+                  <span>Scan with Open-Source Tesseract OCR</span>
                 </button>
 
-                <button
-                  onClick={handleScanAgain}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-gray-800 font-semibold text-sm border border-gray-300 transition-colors cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 text-gray-600" />
-                  <span>Upload Another Image</span>
-                </button>
+                <div className="flex items-center justify-center gap-3 mt-1">
+                  <button
+                    onClick={() => handlePerformScan("auto")}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Try Auto Scan</span>
+                  </button>
+
+                  <button
+                    onClick={handleScanAgain}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-300 transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Upload Another</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

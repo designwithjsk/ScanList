@@ -3,21 +3,22 @@ import { Sparkles, CheckCircle2, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 
 interface ScanProgressProps {
-  onProgressComplete?: () => void;
+  engine?: "auto" | "tesseract" | "gemini";
+  statusText?: string;
 }
 
-export const ScanProgress: React.FC<ScanProgressProps> = () => {
+export const ScanProgress: React.FC<ScanProgressProps> = ({ engine = "auto", statusText }) => {
   const [currentStep, setCurrentStep] = useState<number>(0);
 
   const steps = [
-    { title: "Reading handwriting & text", desc: "Analyzing layout, strokes, and printed characters" },
-    { title: "Detecting checklist items", desc: "Identifying lines, bullets, and checkbox states" },
+    { title: "Reading image & text", desc: "Analyzing lines, strokes, and printed characters" },
+    { title: "Detecting checklist items", desc: "Identifying bullets, numbers, and checkbox states" },
     { title: "Organizing task list", desc: "Structuring items line-by-line" }
   ];
 
   useEffect(() => {
-    const timer1 = setTimeout(() => setCurrentStep(1), 1100);
-    const timer2 = setTimeout(() => setCurrentStep(2), 2200);
+    const timer1 = setTimeout(() => setCurrentStep(1), 800);
+    const timer2 = setTimeout(() => setCurrentStep(2), 1600);
 
     return () => {
       clearTimeout(timer1);
@@ -26,16 +27,18 @@ export const ScanProgress: React.FC<ScanProgressProps> = () => {
   }, []);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-xs max-w-lg mx-auto">
-      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4">
+    <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs max-w-lg mx-auto">
+      <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-900 flex items-center justify-center mx-auto mb-4">
         <Sparkles className="w-6 h-6 animate-pulse" />
       </div>
 
-      <h3 className="text-lg font-bold text-gray-900 mb-1">
+      <h3 className="text-lg font-bold text-slate-900 mb-1">
         Scanning checklist...
       </h3>
-      <p className="text-xs text-gray-500 mb-6">
-        Gemini AI vision is extracting your task items
+      <p className="text-xs text-slate-500 mb-6 font-normal">
+        {statusText || (engine === "tesseract"
+          ? "Using Open-Source Tesseract OCR engine (100% local, no API required)"
+          : "Processing image with OCR scanning engine")}
       </p>
 
       {/* Progress Steps List */}
