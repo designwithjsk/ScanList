@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Plus, FolderPlus, Scan, CheckCircle2, ListTodo, Sparkles } from "lucide-react";
+import { Plus, FolderPlus, Scan, CheckCircle2, ListTodo, LogIn, Cloud } from "lucide-react";
 import { Task } from "../types";
 import { TaskItem } from "./TaskItem";
+import { User as FirebaseUser } from "firebase/auth";
 
 interface ExtractedTaskListProps {
   tasks: Task[];
@@ -10,6 +11,8 @@ interface ExtractedTaskListProps {
   onSaveToLists: (title: string, tasks: Task[]) => void;
   onScanAgain: () => void;
   onShowDeleteToast: (deletedTask: Task, restoreIndex: number) => void;
+  user?: FirebaseUser | null;
+  onLogin?: () => void;
 }
 
 export const ExtractedTaskList: React.FC<ExtractedTaskListProps> = ({
@@ -19,6 +22,8 @@ export const ExtractedTaskList: React.FC<ExtractedTaskListProps> = ({
   onSaveToLists,
   onScanAgain,
   onShowDeleteToast,
+  user,
+  onLogin,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newTaskText, setNewTaskText] = useState("");
@@ -164,17 +169,33 @@ export const ExtractedTaskList: React.FC<ExtractedTaskListProps> = ({
         </button>
       )}
 
-      {/* Bottom Save Action */}
-      <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      {/* Bottom Save Action & Cloud Backup Callout */}
+      {!user && (
+        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-700">
+          <div className="flex items-center gap-2">
+            <Cloud className="w-4 h-4 text-slate-500 shrink-0" />
+            <span>Want to back up and sync this task list across devices?</span>
+          </div>
+          <button
+            onClick={onLogin}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-semibold transition-colors cursor-pointer shrink-0"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Google Sign In</span>
+          </button>
+        </div>
+      )}
+
+      <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
         {isSaved ? (
-          <div className="flex items-center gap-2 text-emerald-600 font-semibold text-sm bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-200 w-full justify-center sm:w-auto">
+          <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm bg-emerald-50 px-4 py-2.5 rounded-full border border-emerald-200 w-full justify-center sm:w-auto">
             <CheckCircle2 className="w-4 h-4" />
             <span>Added to your task list!</span>
           </div>
         ) : (
           <button
             onClick={handleSaveToCollection}
-            className="flex-1 min-w-[180px] flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-xs transition-colors cursor-pointer"
+            className="flex-1 min-w-[180px] flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition-colors cursor-pointer"
           >
             <FolderPlus className="w-4 h-4" />
             <span>Add to Task List</span>
@@ -183,9 +204,9 @@ export const ExtractedTaskList: React.FC<ExtractedTaskListProps> = ({
 
         <button
           onClick={onScanAgain}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-semibold text-sm border border-gray-300 transition-colors cursor-pointer"
+          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm border border-slate-300 transition-colors cursor-pointer"
         >
-          <Scan className="w-4 h-4 text-gray-500" />
+          <Scan className="w-4 h-4 text-slate-500" />
           <span>Scan Again</span>
         </button>
       </div>

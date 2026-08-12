@@ -5,12 +5,14 @@ import {
   CheckCircle,
   Plus,
   Folder,
-  Sparkles,
+  Cloud,
+  CloudOff,
   Trash2,
-  ChevronRight,
-  Scan
+  Scan,
+  LogIn
 } from "lucide-react";
 import { TaskList, ActiveView } from "../types";
+import { User as FirebaseUser } from "firebase/auth";
 
 interface SidebarProps {
   activeView: ActiveView;
@@ -21,6 +23,8 @@ interface SidebarProps {
   onNewScan: () => void;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
+  user?: FirebaseUser | null;
+  onLogin?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,6 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNewScan,
   isOpenMobile,
   onCloseMobile,
+  user,
+  onLogin,
 }) => {
   const content = (
     <div className="flex flex-col h-full bg-gray-50/60 border-r border-gray-200/80 w-64 p-4 text-sm font-medium text-gray-700 select-none">
@@ -172,15 +178,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* User Profile Footer */}
-      <div className="pt-4 mt-auto border-t border-gray-200/80 flex items-center gap-3 px-2">
-        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
-          AJ
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-gray-900 truncate">Alex Johnson</p>
-          <p className="text-[11px] text-gray-500 truncate">alex@example.com</p>
-        </div>
+      {/* User Profile / Google Login Footer */}
+      <div className="pt-4 mt-auto border-t border-slate-200 px-1">
+        {user ? (
+          <div className="flex items-center gap-3">
+            {user.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName || "User"}
+                className="w-8 h-8 rounded-full border border-slate-200 object-cover shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                {(user.displayName || "U").charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-900 truncate">
+                {user.displayName || "Signed In"}
+              </p>
+              <p className="text-[10px] text-emerald-600 font-semibold truncate flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                Saved in Google Cloud
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-slate-500 font-medium text-center">
+              Want to save & sync your task lists?
+            </p>
+            <button
+              onClick={onLogin}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-slate-900 hover:bg-slate-800 rounded-full text-xs font-semibold text-white transition-colors cursor-pointer shadow-xs"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Google Sign In</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

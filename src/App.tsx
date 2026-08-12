@@ -44,16 +44,57 @@ export default function App() {
   // Toast notification state
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  // Load saved lists on mount
+  // Firebase Auth & Cloud Sync state
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+
+  // Listen for Firebase Auth state changes
   useEffect(() => {
-    const loaded = loadSavedLists();
-    setSavedLists(loaded);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Save to storage whenever savedLists updates
+  // Synchronize task lists with Firebase Firestore when logged in
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = subscribeToUserTaskLists(user.uid, (cloudLists) => {
+        setSavedLists(cloudLists);
+      });
+      return () => unsubscribe();
+    } else {
+      const loaded = loadSavedLists();
+      setSavedLists(loaded);
+    }
+  }, [user]);
+
+  // Save to storage (Firestore if logged in, local storage if guest)
   const updateSavedLists = (newLists: TaskList[]) => {
     setSavedLists(newLists);
-    saveSavedLists(newLists);
+    if (!user) {
+      saveSavedLists(newLists);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const loggedInUser = await signInWithGoogle();
+      if (loggedInUser) {
+        showToast(`Welcome, ${loggedInUser.displayName || "back"}!`, "success");
+      }
+    } catch (error: any) {
+      console.error("Google Login error:", error);
+      showToast("Google Sign In failed. Please try again.", "info");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutFirebase();
+      showToast("Signed out", "info");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   // Toast handler
@@ -325,6 +366,9 @@ export default function App() {
       <Header
         onQuickAddTask={handleQuickAddTask}
         onToggleSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+        user={user}
+        onLogin={handleGoogleLogin}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
@@ -342,6 +386,8 @@ export default function App() {
           onNewScan={handleScanAgain}
           isOpenMobile={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          user={user}
+          onLogin={handleGoogleLogin}
         />
 
         {/* Main Content Workspace */}
@@ -461,6 +507,8 @@ export default function App() {
                   onUpdateTasks={(updated) => setScannedTasks(updated)}
                   onSaveToLists={handleSaveScannedToLists}
                   onScanAgain={handleScanAgain}
+                  user={user}
+                  onLogin={handleGoogleLogin}
                   onShowDeleteToast={(deletedTask, index) => {
                     showToast("Task deleted", "deleted", () => {
                       const restored = [...scannedTasks];
